@@ -122,6 +122,10 @@ function getRefranRandom() {
 /* -------------------------- WHATSAPP --------------------------- */
 async function sendMessage(text) {
   try {
+    console.log("\n================ WHATSAPP MESSAGE SENT ================");
+    console.log(text);
+    console.log("=======================================================\n");
+
     await axios.post(
       `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`,
       {
