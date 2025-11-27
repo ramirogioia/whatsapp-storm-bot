@@ -1,15 +1,13 @@
 const axios = require("axios");
 
-// Coordenadas de Lanús Oeste
-const LAT = "-34.7016";
-const LON = "-58.4100";
-
 const API_KEY = process.env.OPENWEATHER_KEY;
 const TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const TO_NUMBER = process.env.DESTINATION;
 
-// Envía mensaje por WhatsApp
+const LAT = -34.7016;
+const LON = -58.4100;
+
 async function sendMessage(text) {
   try {
     await axios.post(
@@ -22,59 +20,58 @@ async function sendMessage(text) {
       { headers: { Authorization: `Bearer ${TOKEN}` } }
     );
   } catch (err) {
-    console.error("❌ Error enviando WhatsApp:", err.response?.data || err.message);
+    console.error("Error enviando WhatsApp:", err.response?.data || err.message);
   }
 }
 
-// Detecta lluvia, tormenta o llovizna
-function isRainOrStorm(entry) {
-  return entry.weather.some(w =>
-    ["Thunderstorm", "Rain", "Drizzle"].includes(w.main)
-  );
+function formatTime(timestamp) {
+  return new Date(timestamp * 1000).toLocaleString("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "numeric",
+    month: "short"
+  });
 }
 
-// Chequea el clima cada hora
-async function checkStorm() {
+async function checkWeather() {
   try {
-    const url =
-      `https://api.openweathermap.org/data/2.5/forecast?lat=${LAT}&lon=${LON}&appid=${API_KEY}&units=metric&lang=es`;
+    const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${LAT}&lon=${LON}&appid=${API_KEY}&units=metric&lang=es`;
 
     const { data } = await axios.get(url);
 
-    const today = new Date().getDate();
-    const alerts = [];
+    // ---------------- ALERTAS OFICIALES -------------------
+    if (data.alerts && data.alerts.length > 0) {
+      for (const alert of data.alerts) {
+        const msg = `⚠️ *Alerta Oficial del SMN*\n\n` +
+          `*${alert.event}*\n` +
+          `Desde: ${formatTime(alert.start)}\n` +
+          `Hasta: ${formatTime(alert.end)}\n\n` +
+          `${alert.description}`;
 
-    for (const item of data.list) {
-      const entryDay = new Date(item.dt * 1000).getDate();
-
-      if (entryDay === today && isRainOrStorm(item)) {
-        alerts.push({
-          hour: new Date(item.dt * 1000).toLocaleTimeString("es-AR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          condition: item.weather[0].description,
-          temp: item.main.temp,
-        });
+        await sendMessage(msg);
       }
     }
 
-    if (alerts.length > 0) {
-      let msg = "⛈️ *Alerta de lluvia para hoy en Lanús Oeste*\n\n";
+    // ---------------- LLUVIA / TORMENTA -------------------
+    const nextHours = data.hourly.slice(0, 12);
 
-      alerts.forEach(a => {
-        msg += `• ${a.hour} → ${a.condition} (${a.temp}°C)\n`;
-      });
+    for (const h of nextHours) {
+      const weather = h.weather[0]?.main;
+      if (weather === "Rain" || weather === "Thunderstorm") {
+        const msg = `⛈️ *Alerta de lluvia/tormenta próxima*\n\n` +
+          `Hora: ${formatTime(h.dt)}\n` +
+          `Clima: ${h.weather[0].description}\n` +
+          `Temp: ${h.temp}°C`;
 
-      await sendMessage(msg);
+        await sendMessage(msg);
+        break;
+      }
     }
 
-  } catch (err) {
-    // Notificar errores por WhatsApp también
-    await sendMessage("❌ Error consultando clima: " + (err.response?.data?.message || err.message));
-    console.error("Error:", err.response?.data || err.message);
+  } catch (error) {
+    console.error("Error consultando clima:", error.response?.data || error.message);
+    await sendMessage(`❌ Error consultando clima: ${JSON.stringify(error.response?.data || error.message)}`);
   }
 }
 
-// Ejecutar
-checkStorm();
+checkWeather();
