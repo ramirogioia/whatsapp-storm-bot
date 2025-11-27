@@ -24,8 +24,8 @@ async function sendMessage(text) {
   }
 }
 
-function formatTime(timestamp) {
-  return new Date(timestamp * 1000).toLocaleString("es-AR", {
+function formatTime(ts) {
+  return new Date(ts * 1000).toLocaleString("es-AR", {
     hour: "2-digit",
     minute: "2-digit",
     day: "numeric",
@@ -35,42 +35,43 @@ function formatTime(timestamp) {
 
 async function checkWeather() {
   try {
-    const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${LAT}&lon=${LON}&appid=${API_KEY}&units=metric&lang=es`;
+    // --- Clima actual (posibles ALERTAS OFICIALES SMN) ---
+    const nowUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${LAT}&lon=${LON}&appid=${API_KEY}&units=metric&lang=es`;
+    const nowRes = await axios.get(nowUrl);
 
-    const { data } = await axios.get(url);
-
-    // ---------------- ALERTAS OFICIALES -------------------
-    if (data.alerts && data.alerts.length > 0) {
-      for (const alert of data.alerts) {
+    if (nowRes.data.alerts) {
+      for (const alert of nowRes.data.alerts) {
         const msg = `⚠️ *Alerta Oficial del SMN*\n\n` +
           `*${alert.event}*\n` +
           `Desde: ${formatTime(alert.start)}\n` +
           `Hasta: ${formatTime(alert.end)}\n\n` +
           `${alert.description}`;
-
         await sendMessage(msg);
       }
     }
 
-    // ---------------- LLUVIA / TORMENTA -------------------
-    const nextHours = data.hourly.slice(0, 12);
+    // --- Pronóstico a futuro (lluvia/tormenta próximas) ---
+    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${LAT}&lon=${LON}&appid=${API_KEY}&units=metric&lang=es`;
+    const forecastRes = await axios.get(forecastUrl);
+
+    const nextHours = forecastRes.data.list.slice(0, 8); // 24hs
 
     for (const h of nextHours) {
-      const weather = h.weather[0]?.main;
-      if (weather === "Rain" || weather === "Thunderstorm") {
-        const msg = `⛈️ *Alerta de lluvia/tormenta próxima*\n\n` +
-          `Hora: ${formatTime(h.dt)}\n` +
+      const w = h.weather[0].main;
+      if (w === "Rain" || w === "Thunderstorm") {
+        const msg = `⛈️ *Alerta de lluvia/Tormenta próxima*\n\n` +
+          `Hora: ${h.dt_txt}\n` +
           `Clima: ${h.weather[0].description}\n` +
-          `Temp: ${h.temp}°C`;
+          `Temp: ${h.main.temp}°C`;
 
         await sendMessage(msg);
         break;
       }
     }
 
-  } catch (error) {
-    console.error("Error consultando clima:", error.response?.data || error.message);
-    await sendMessage(`❌ Error consultando clima: ${JSON.stringify(error.response?.data || error.message)}`);
+  } catch (err) {
+    console.error("Error consultando clima:", err.response?.data || err.message);
+    await sendMessage(`❌ Error consultando clima:\n${JSON.stringify(err.response?.data || err.message)}`);
   }
 }
 
