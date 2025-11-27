@@ -1,4 +1,5 @@
 const axios = require("axios");
+const fs = require("fs");
 
 const API_KEY = process.env.OPENWEATHER_KEY;
 const TOKEN = process.env.WHATSAPP_TOKEN;
@@ -8,9 +9,27 @@ const TO_NUMBER = process.env.DESTINATION;
 const LAT = -34.7016;
 const LON = -58.4100;
 
-// -------------------------------------------
-// Obtener refrán aleatorio desde GitHub (API gratis)
-// -------------------------------------------
+const STATE_FILE = "./state.json";
+
+// ------------------------
+// Leer estado previo
+// ------------------------
+function getState() {
+  try {
+    return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+  } catch {
+    return { last_alert_hash: null };
+  }
+}
+
+// ------------------------
+// Guardar estado
+// ------------------------
+function saveState(state) {
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+// ------------------------
 async function getRefranRandom() {
   try {
     const res = await axios.get(
@@ -18,15 +37,11 @@ async function getRefranRandom() {
     );
     const refranes = res.data;
     return refranes[Math.floor(Math.random() * refranes.length)];
-  } catch (err) {
-    console.error("Error obteniendo refrán:", err.message);
-    return "Más vale prevenir que curar."; // fallback
+  } catch {
+    return "Más vale prevenir que curar.";
   }
 }
 
-// -------------------------------------------
-// Enviar mensaje por WhatsApp
-// -------------------------------------------
 async function sendMessage(text) {
   try {
     await axios.post(
@@ -34,7 +49,7 @@ async function sendMessage(text) {
       {
         messaging_product: "whatsapp",
         to: TO_NUMBER,
-        text: { body: text },
+        text: { body: text }
       },
       { headers: { Authorization: `Bearer ${TOKEN}` } }
     );
@@ -43,22 +58,17 @@ async function sendMessage(text) {
   }
 }
 
-// -------------------------------------------
-// Formato de hora "09:00 p. m."
-// -------------------------------------------
 function formatHour(dateStr) {
   const date = new Date(dateStr);
   return date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 }
 
-// -------------------------------------------
-// Chequear clima Lanús Oeste
-// -------------------------------------------
 async function checkWeather() {
   try {
-    // API Forecast gratuita (lluvia/tormenta próximas)
-    const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${LAT}&lon=${LON}&appid=${API_KEY}&units=metric&lang=es`;
+    const state = getState();
 
+    // Forecast
+    const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${LAT}&lon=${LON}&appid=${API_KEY}&units=metric&lang=es`;
     const { data } = await axios.get(url);
 
     const frase = await getRefranRandom();
@@ -70,17 +80,30 @@ async function checkWeather() {
       if (entryDay !== today) continue;
 
       const cond = entry.weather[0].main;
-
       if (cond === "Rain" || cond === "Thunderstorm") {
         alerts.push({
           time: formatHour(entry.dt_txt),
           desc: entry.weather[0].description,
-          temp: entry.main.temp
+          temp: entry.main.temp,
+          dt: entry.dt_txt
         });
       }
     }
 
     if (alerts.length > 0) {
+      // Sacamos el PRIMER evento del día como referencia
+      const first = alerts[0];
+
+      // Hash único del evento
+      const alertHash = `${first.desc}-${first.dt}-${Math.round(first.temp)}`;
+
+      // Si es igual al anterior → no enviar
+      if (state.last_alert_hash === alertHash) {
+        console.log("⛔ Alerta repetida, no se envía.");
+        return;
+      }
+
+      // Si es nueva → enviar
       let message = `🌤️ Hola Pauli!\n"${frase}"\n\n`;
       message += `⛈️ Alerta de lluvia para hoy en Lanús Oeste\n\n`;
 
@@ -89,16 +112,17 @@ async function checkWeather() {
       }
 
       await sendMessage(message);
+
+      // Guardar nuevo estado
+      saveState({ last_alert_hash: alertHash });
+
+    } else {
+      console.log("Sin lluvia significativa hoy.");
     }
 
   } catch (err) {
     console.error("Error consultando clima:", err.response?.data || err.message);
-
-    await sendMessage(
-      `❌ Pauli, tuve un error mirando el clima:\n${JSON.stringify(
-        err.response?.data || err.message
-      )}`
-    );
+    await sendMessage(`❌ Pauli, tuve un error mirando el clima:\n${JSON.stringify(err.response?.data || err.message)}`);
   }
 }
 
