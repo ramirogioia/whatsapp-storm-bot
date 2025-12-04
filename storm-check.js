@@ -6,8 +6,8 @@ const TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const TO_NUMBER = process.env.DESTINATION;
 
-const LAT = -34.7016;
-const LON = -58.4100;
+const LAT = -34.703104;
+const LON = -58.395347;
 
 const STATE_FILE = "./state.json";
 
