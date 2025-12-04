@@ -143,6 +143,49 @@ async function sendMessage(text) {
   }
 }
 
+/* ------------------- SECOND OPINION: OPEN-METEO ------------------- */
+async function checkOpenMeteo() {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=precipitation_probability,weathercode,temperature_2m&timezone=America/Argentina/Buenos_Aires`;
+
+    const { data } = await axios.get(url);
+
+    const alerts = [];
+
+    for (let i = 0; i < data.hourly.time.length; i++) {
+      const hour = new Date(data.hourly.time[i]);
+      const today = new Date().getDate();
+      if (hour.getDate() !== today) continue;
+
+      const code = data.hourly.weathercode[i];
+      const temp = data.hourly.temperature_2m[i];
+
+      // Rain / Storm weathercodes
+      if (
+        (code >= 51 && code <= 67) ||
+        (code >= 80 && code <= 82) ||
+        (code >= 95 && code <= 99)
+      ) {
+        alerts.push({
+          time: hour.toLocaleTimeString("es-AR", {
+            hour: "2-digit",
+            minute: "2-digit"
+          }),
+          desc: "lluvia o tormenta (segunda opinión Open-Meteo)",
+          temp,
+          dt: data.hourly.time[i]
+        });
+      }
+    }
+
+    return alerts;
+
+  } catch (err) {
+    console.error("Error consultando Open-Meteo:", err.message);
+    return [];
+  }
+}
+
 /* --------------------------- UTILS ----------------------------- */
 function formatHour(dateStr) {
   const date = new Date(dateStr);
@@ -159,8 +202,9 @@ async function checkWeather() {
 
     const refran = getRefranRandom();
     const today = new Date().getDate();
-    const alerts = [];
+    let alerts = [];
 
+    /* -------- PRIMERA API: OPENWEATHER -------- */
     for (const entry of data.list) {
       const entryDay = new Date(entry.dt_txt).getDate();
       if (entryDay !== today) continue;
@@ -176,28 +220,42 @@ async function checkWeather() {
       }
     }
 
-    if (alerts.length > 0) {
-      const first = alerts[0];
-      const alertHash = `${first.desc}-${first.dt}-${Math.round(first.temp)}`;
+    /* -------- SI NO DETECTA NADA: SEGUNDA OPINIÓN -------- */
+    if (alerts.length === 0) {
+      console.log("⛔ OpenWeather no detectó lluvia. Consultando Open-Meteo…");
 
-      if (state.last_alert_hash === alertHash) {
-        console.log("⛔ Alerta duplicada, no se envía.");
-        return;
+      const secondaryAlerts = await checkOpenMeteo();
+
+      if (secondaryAlerts.length > 0) {
+        alerts = secondaryAlerts;
       }
-
-      let message = `🌤️ Hola Pauli!\n"${refran}"\n\n`;
-      message += `⛈️ Alerta de lluvia para hoy en Lanús Oeste\n\n`;
-
-      for (const a of alerts) {
-        message += `• ${a.time} → ${a.desc} (${a.temp}°C)\n`;
-      }
-
-      await sendMessage(message);
-      saveState({ last_alert_hash: alertHash });
-
-    } else {
-      console.log("No hay alertas de lluvia.");
     }
+
+    /* -------- SI SIGUE SIN ALERTAS -------- */
+    if (alerts.length === 0) {
+      console.log("No hay alertas de lluvia en ninguna API.");
+      return;
+    }
+
+    /* -------- EVITAR DUPLICADOS -------- */
+    const first = alerts[0];
+    const alertHash = `${first.desc}-${first.dt}-${Math.round(first.temp)}`;
+
+    if (state.last_alert_hash === alertHash) {
+      console.log("⛔ Alerta duplicada, no se envía.");
+      return;
+    }
+
+    /* -------- MENSAJE FINAL -------- */
+    let message = `🌤️ Hola Pauli!\n"${refran}"\n\n`;
+    message += `⛈️ Alerta de lluvia para hoy en Lanús Oeste\n\n`;
+
+    for (const a of alerts) {
+      message += `• ${a.time} → ${a.desc} (${a.temp}°C)\n`;
+    }
+
+    await sendMessage(message);
+    saveState({ last_alert_hash: alertHash });
 
   } catch (err) {
     await sendMessage(
