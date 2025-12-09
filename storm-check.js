@@ -126,7 +126,7 @@ async function sendMessage(text) {
     console.log(text);
     console.log("=======================================================\n");
 
-    await axios.post(
+    const res = await axios.post(
       `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: "whatsapp",
@@ -136,16 +136,21 @@ async function sendMessage(text) {
       { headers: { Authorization: `Bearer ${TOKEN}` } }
     );
 
+    console.log("\n===== META RESPONSE =====");
+    console.log(JSON.stringify(res.data, null, 2));
+    console.log("=========================\n");
+
   } catch (err) {
-    console.error("\n\n🔥🔥🔥 ERROR ENVIANDO WHATSAPP >>>>>>>>>>>>>>>>");
+    console.error("\n🔥🔥🔥 ERROR AL ENVIAR WHATSAPP >>>>>>>>>>>>>>>>>>");
     console.error("Mensaje:", text);
     console.error("err.message:", err.message);
     console.error("err.response?.status:", err.response?.status);
     console.error("err.response?.data:", JSON.stringify(err.response?.data, null, 2));
     console.error("RAW ERROR:", err);
-    console.error("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<🔥🔥🔥\n\n");
+    console.error("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<🔥🔥🔥\n");
   }
 }
+
 
 /* ------------------- SECOND OPINION: OPEN-METEO ------------------- */
 async function checkOpenMeteo() {
