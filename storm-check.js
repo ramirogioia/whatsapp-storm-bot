@@ -135,11 +135,15 @@ async function sendMessage(text) {
       },
       { headers: { Authorization: `Bearer ${TOKEN}` } }
     );
+
   } catch (err) {
-    console.error(
-      "Error enviando WhatsApp:",
-      err.response?.data || err.message
-    );
+    console.error("\n\n🔥🔥🔥 ERROR ENVIANDO WHATSAPP >>>>>>>>>>>>>>>>");
+    console.error("Mensaje:", text);
+    console.error("err.message:", err.message);
+    console.error("err.response?.status:", err.response?.status);
+    console.error("err.response?.data:", JSON.stringify(err.response?.data, null, 2));
+    console.error("RAW ERROR:", err);
+    console.error("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<🔥🔥🔥\n\n");
   }
 }
 
