@@ -1,15 +1,12 @@
 const axios = require("axios");
 const fs = require("fs");
 
-const API_KEY = process.env.OPENWEATHER_KEY;
 const TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const TO_NUMBER = process.env.DESTINATION;
 
-const LAT = -34.703104;
-const LON = -58.395347;
-
 const STATE_FILE = "./state.json";
+const WINDGURU_URL = "https://www.windguru.cz/int/json.php?tid=139&uid=0";
 
 /* ------------------------------ 100 REFRANES ----------------------------- */
 const REFRANES = [
@@ -27,79 +24,9 @@ const REFRANES = [
   "Cría cuervos y te sacarán los ojos.",
   "No todo lo que brilla es oro.",
   "El que mucho abarca, poco aprieta.",
-  "Al que quiere celeste, que le cueste.",
   "A palabras necias, oídos sordos.",
-  "Ojos que no ven, corazón que no siente.",
-  "Quien mal anda, mal acaba.",
-  "Barriga llena, corazón contento.",
-  "Haz el bien sin mirar a quién.",
-  "Perro que ladra no muerde.",
-  "Donde hubo fuego, cenizas quedan.",
-  "A caballo regalado no se le mira el diente.",
-  "Roma no se hizo en un día.",
-  "No hay peor ciego que el que no quiere ver.",
-  "Cada loco con su tema.",
-  "A grandes males, grandes remedios.",
-  "Más vale tarde que nunca.",
-  "El hábito no hace al monje.",
-  "Al mal paso, darle prisa.",
-  "En boca cerrada no entran moscas.",
-  "El que no arriesga no gana.",
-  "Lo prometido es deuda.",
-  "Más sabe el diablo por viejo que por diablo.",
-  "Un clavo saca a otro clavo.",
-  "Piensa mal y acertarás.",
-  "A río revuelto, ganancia de pescadores.",
-  "Hombre prevenido vale por dos.",
-  "Hierba mala nunca muere.",
-  "La esperanza es lo último que se pierde.",
-  "Donde manda capitán, no manda marinero.",
-  "A falta de pan, buenas son tortas.",
-  "Zorro viejo no cae en la trampa.",
-  "Nunca es tarde si la dicha es buena.",
-  "Quien mucho se despide, pocas ganas tiene de irse.",
   "El que calla otorga.",
-  "Quien siembra vientos recoge tempestades.",
-  "No por mucho madrugar amanece más temprano.",
-  "Cada oveja con su pareja.",
-  "Al pan, pan y al vino, vino.",
-  "Cuando el gato no está, los ratones bailan.",
-  "No se puede estar en misa y en la procesión.",
-  "Vísteme despacio que estoy apurado.",
-  "Arrieros somos y en el camino andamos.",
-  "El que algo quiere, algo le cuesta.",
-  "No hay mal que cien años dure.",
-  "Al que buen árbol se arrima, buena sombra lo cobija.",
-  "El tiempo lo cura todo.",
-  "Cuando el hambre aprieta, no hay pan duro.",
-  "No es oro todo lo que reluce.",
-  "De tal palo, tal astilla.",
-  "Genio y figura hasta la sepultura.",
-  "Con paciencia y saliva, el elefante a la hormiga.",
-  "Dios aprieta pero no ahorca.",
-  "El que avisa no traiciona.",
-  "A llorar al campito.",
-  "A buen entendedor, pocas palabras.",
-  "Del dicho al hecho hay mucho trecho.",
-  "No hay rosa sin espinas.",
-  "El que nace para pito, nunca llega a corneta.",
-  "El que se quema con leche, ve una vaca y llora.",
-  "Lo barato sale caro.",
-  "Quien mucho corre, pronto para.",
-  "Nunca llueve a gusto de todos.",
-  "Mañana será otro día.",
-  "A todo cerdo le llega su San Martín.",
-  "En la variedad está el gusto.",
-  "La ocasión hace al ladrón.",
-  "El que espera, desespera.",
-  "Nadie es profeta en su tierra.",
-  "Hoy por ti, mañana por mí.",
-  "Más vale pájaro en mano que cien volando.",
-  "Cada maestrito con su librito.",
-  "La suerte está echada.",
-  "Donde pisa león, no pisa burro.",
-  "Si la montaña no viene a ti, ve tú a la montaña.",
-  "Al que no quiere caldo, se le dan dos tazas."
+  "Hierba mala nunca muere."
 ];
 
 /* ---------------------------- ESTADO ---------------------------- */
@@ -115,18 +42,18 @@ function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
+/* -------------------------- UTILS --------------------------- */
 function getRefranRandom() {
   return REFRANES[Math.floor(Math.random() * REFRANES.length)];
 }
 
-/* -------------------------- WHATSAPP --------------------------- */
 async function sendMessage(text) {
   try {
     console.log("\n================ WHATSAPP MESSAGE SENT ================");
     console.log(text);
     console.log("=======================================================\n");
 
-    const res = await axios.post(
+    await axios.post(
       `https://graph.facebook.com/v17.0/${PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: "whatsapp",
@@ -135,143 +62,88 @@ async function sendMessage(text) {
       },
       { headers: { Authorization: `Bearer ${TOKEN}` } }
     );
-
-    console.log("\n===== META RESPONSE =====");
-    console.log(JSON.stringify(res.data, null, 2));
-    console.log("=========================\n");
-
   } catch (err) {
-    console.error("\n🔥🔥🔥 ERROR AL ENVIAR WHATSAPP >>>>>>>>>>>>>>>>>>");
-    console.error("Mensaje:", text);
-    console.error("err.message:", err.message);
-    console.error("err.response?.status:", err.response?.status);
-    console.error("err.response?.data:", JSON.stringify(err.response?.data, null, 2));
-    console.error("RAW ERROR:", err);
-    console.error("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<🔥🔥🔥\n");
+    console.error("❌ Error enviando WhatsApp:", err.response?.data || err.message);
   }
 }
 
-
-/* ------------------- SECOND OPINION: OPEN-METEO ------------------- */
-async function checkOpenMeteo() {
+/* ---------------------- WINDGURU CHECK ----------------------- */
+async function getWindGuruAlerts() {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=precipitation_probability,weathercode,temperature_2m&timezone=America/Argentina/Buenos_Aires`;
+    const { data } = await axios.get(WINDGURU_URL);
+    const model = data.fcst["3"]; // modelo principal WG
 
-    const { data } = await axios.get(url);
+    const hours = model.hours;
+    const rain = model.rain;
+    const temp = model.TMP || model.temp || [];
 
     const alerts = [];
+    const today = new Date().getDate();
 
-    for (let i = 0; i < data.hourly.time.length; i++) {
-      const hour = new Date(data.hourly.time[i]);
-      const today = new Date().getDate();
+    for (let i = 0; i < hours.length; i++) {
+      const hour = new Date(hours[i]);
       if (hour.getDate() !== today) continue;
 
-      const code = data.hourly.weathercode[i];
-      const temp = data.hourly.temperature_2m[i];
-
-      // Rain / Storm weathercodes
-      if (
-        (code >= 51 && code <= 67) ||
-        (code >= 80 && code <= 82) ||
-        (code >= 95 && code <= 99)
-      ) {
+      if (rain[i] > 0) {
         alerts.push({
           time: hour.toLocaleTimeString("es-AR", {
             hour: "2-digit",
             minute: "2-digit"
           }),
-          desc: "lluvia o tormenta (segunda opinión Open-Meteo)",
-          temp,
-          dt: data.hourly.time[i]
+          desc: `lluvia (${rain[i]} mm/h)`,
+          temp: temp[i] || null,
+          dt: hours[i]
         });
       }
     }
 
     return alerts;
-
   } catch (err) {
-    console.error("Error consultando Open-Meteo:", err.message);
-    return [];
+    return { error: err.message };
   }
 }
 
-/* --------------------------- UTILS ----------------------------- */
-function formatHour(dateStr) {
-  const date = new Date(dateStr);
-  return date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
-}
-
-/* ----------------------- CHECK WEATHER ------------------------- */
+/* ----------------------- MAIN WEATHER CHECK ------------------------- */
 async function checkWeather() {
   try {
     const state = getState();
 
-    const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${LAT}&lon=${LON}&appid=${API_KEY}&units=metric&lang=es`;
-    const { data } = await axios.get(url);
+    const alerts = await getWindGuruAlerts();
 
-    const refran = getRefranRandom();
-    const today = new Date().getDate();
-    let alerts = [];
-
-    /* -------- PRIMERA API: OPENWEATHER -------- */
-    for (const entry of data.list) {
-      const entryDay = new Date(entry.dt_txt).getDate();
-      if (entryDay !== today) continue;
-
-      const cond = entry.weather[0].main;
-      if (cond === "Rain" || cond === "Thunderstorm") {
-        alerts.push({
-          time: formatHour(entry.dt_txt),
-          desc: entry.weather[0].description,
-          temp: entry.main.temp,
-          dt: entry.dt_txt
-        });
-      }
-    }
-
-    /* -------- SI NO DETECTA NADA: SEGUNDA OPINIÓN -------- */
-    if (alerts.length === 0) {
-      console.log("⛔ OpenWeather no detectó lluvia. Consultando Open-Meteo…");
-
-      const secondaryAlerts = await checkOpenMeteo();
-
-      if (secondaryAlerts.length > 0) {
-        alerts = secondaryAlerts;
-      }
-    }
-
-    /* -------- SI SIGUE SIN ALERTAS -------- */
-    if (alerts.length === 0) {
-      console.log("No hay alertas de lluvia en ninguna API.");
+    if (alerts.error) {
+      await sendMessage(`❌ Pauli, WindGuru no respondió:\n${alerts.error}`);
       return;
     }
 
-    /* -------- EVITAR DUPLICADOS -------- */
+    if (alerts.length === 0) {
+      console.log("No hay lluvia según WindGuru.");
+      return;
+    }
+
+    // evitar duplicados
     const first = alerts[0];
-    const alertHash = `${first.desc}-${first.dt}-${Math.round(first.temp)}`;
+    const alertHash = `${first.dt}-${first.desc}-${Math.round(first.temp || 0)}`;
 
     if (state.last_alert_hash === alertHash) {
       console.log("⛔ Alerta duplicada, no se envía.");
       return;
     }
 
-    /* -------- MENSAJE FINAL -------- */
-    let message = `🌤️ Hola Pauli!\n"${refran}"\n\n`;
-    message += `⛈️ Alerta de lluvia para hoy en Lanús Oeste\n\n`;
+    // construir mensaje
+    let msg = `🌤️ Hola Pauli!\n"${getRefranRandom()}"\n\n`;
+    msg += `⛈️ Alerta de lluvia según WindGuru (alta precisión)\n\n`;
 
     for (const a of alerts) {
-      message += `• ${a.time} → ${a.desc} (${a.temp}°C)\n`;
+      msg += `• ${a.time} → ${a.desc}`;
+      if (a.temp) msg += ` (${a.temp}°C)`;
+      msg += `\n`;
     }
 
-    await sendMessage(message);
+    await sendMessage(msg);
     saveState({ last_alert_hash: alertHash });
 
   } catch (err) {
-    await sendMessage(
-      `❌ Pauli, tuve un error revisando el clima:\n${JSON.stringify(
-        err.response?.data || err.message
-      )}`
-    );
+    await sendMessage(`❌ Error inesperado:\n${err.message}`);
   }
 }
 
