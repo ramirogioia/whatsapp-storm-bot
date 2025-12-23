@@ -1,33 +1,34 @@
+const { getWindGuruData } = require("./windguruScraper");
+
 const axios = require("axios");
 const fs = require("fs");
+const path = require("path");
 
+/* ---------------------------- ENV VARS ---------------------------- */
 const TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const TO_NUMBER = process.env.DESTINATION;
 
 const STATE_FILE = "./state.json";
-const WINDGURU_URL = "https://www.windguru.cz/int/json.php?tid=139&uid=0";
 
-/* ------------------------------ 100 REFRANES ----------------------------- */
-const REFRANES = [
-  "Más vale prevenir que curar.",
-  "A quien madruga, Dios le ayuda.",
-  "Después de la tormenta siempre llega la calma.",
-  "No hay mal que por bien no venga.",
-  "Camarón que se duerme, se lo lleva la corriente.",
-  "A mal tiempo, buena cara.",
-  "Cuando el río suena, agua trae.",
-  "Dime con quién andas y te diré quién eres.",
-  "No dejes para mañana lo que puedes hacer hoy.",
-  "Agua que no has de beber, déjala correr.",
-  "El que busca, encuentra.",
-  "Cría cuervos y te sacarán los ojos.",
-  "No todo lo que brilla es oro.",
-  "El que mucho abarca, poco aprieta.",
-  "A palabras necias, oídos sordos.",
-  "El que calla otorga.",
-  "Hierba mala nunca muere."
-];
+/* ---------------------------- REFRANES ---------------------------- */
+function loadRefranes() {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, "refranes.txt"), "utf8");
+    return raw
+      .split("\n")
+      .map(r => r.trim())
+      .filter(r => r.length > 0);
+  } catch (err) {
+    console.error("❌ No se pudo cargar refranes:", err.message);
+    return ["Más vale prevenir que curar."]; // fallback seguro
+  }
+}
+
+function getRefranRandom() {
+  const refranes = loadRefranes();
+  return refranes[Math.floor(Math.random() * refranes.length)];
+}
 
 /* ---------------------------- ESTADO ---------------------------- */
 function getState() {
@@ -42,11 +43,7 @@ function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-/* -------------------------- UTILS --------------------------- */
-function getRefranRandom() {
-  return REFRANES[Math.floor(Math.random() * REFRANES.length)];
-}
-
+/* ---------------------------- WHATSAPP ---------------------------- */
 async function sendMessage(text) {
   try {
     console.log("\n================ WHATSAPP MESSAGE SENT ================");
@@ -67,16 +64,13 @@ async function sendMessage(text) {
   }
 }
 
-/* ---------------------- WINDGURU CHECK ----------------------- */
+/* ---------------------------- WINDGURU (SCRAPER) ---------------------------- */
 async function getWindGuruAlerts() {
   try {
-    const { data } = await axios.get(WINDGURU_URL);
-    const model = data.fcst["3"]; // modelo principal WG
+    const data = await getWindGuruData(139);
+    if (!data) return { error: "No se pudo parsear WindGuru" };
 
-    const hours = model.hours;
-    const rain = model.rain;
-    const temp = model.TMP || model.temp || [];
-
+    const { rain, hours, temp } = data;
     const alerts = [];
     const today = new Date().getDate();
 
@@ -84,13 +78,14 @@ async function getWindGuruAlerts() {
       const hour = new Date(hours[i]);
       if (hour.getDate() !== today) continue;
 
-      if (rain[i] > 0) {
+      const mm = rain[i];
+      if (mm > 0) {
         alerts.push({
           time: hour.toLocaleTimeString("es-AR", {
             hour: "2-digit",
             minute: "2-digit"
           }),
-          desc: `lluvia (${rain[i]} mm/h)`,
+          desc: `lluvia (${mm} mm/h)`,
           temp: temp[i] || null,
           dt: hours[i]
         });
@@ -103,7 +98,7 @@ async function getWindGuruAlerts() {
   }
 }
 
-/* ----------------------- MAIN WEATHER CHECK ------------------------- */
+/* ---------------------------- MAIN ---------------------------- */
 async function checkWeather() {
   try {
     const state = getState();
@@ -120,7 +115,6 @@ async function checkWeather() {
       return;
     }
 
-    // evitar duplicados
     const first = alerts[0];
     const alertHash = `${first.dt}-${first.desc}-${Math.round(first.temp || 0)}`;
 
@@ -129,7 +123,6 @@ async function checkWeather() {
       return;
     }
 
-    // construir mensaje
     let msg = `🌤️ Hola Pauli!\n"${getRefranRandom()}"\n\n`;
     msg += `⛈️ Alerta de lluvia según WindGuru (alta precisión)\n\n`;
 
